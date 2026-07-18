@@ -1,0 +1,230 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Auth (NextAuth Credentials provider). Account/Session/VerificationToken are
+// kept so an OAuth provider can be added later without a schema migration,
+// but the app only wires up Credentials today (see src/server/auth/config.ts).
+// ---------------------------------------------------------------------------
+
+model User {
+    id            String    @id @default(cuid())
+    name          String?
+    email         String?   @unique
+    emailVerified DateTime?
+    image         String?
+    passwordHash  String?
+
+    accounts Account[]
+    sessions Session[]
+
+    organizationMemberships OrganizationMember[]
+    projectMemberships      ProjectMember[]
+    importBatches           ImportBatch[]
+    reviewedArticles        Article[]             @relation("ArticleReviewer")
+
+    createdAt DateTime @default(now())
+}
+
+model Account {
+    id                       String  @id @default(cuid())
+    userId                   String
+    type                     String
+    provider                 String
+    providerAccountId        String
+    refresh_token            String?
+    access_token             String?
+    expires_at               Int?
+    token_type               String?
+    scope                    String?
+    id_token                 String?
+    session_state            String?
+    refresh_token_expires_in Int?
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([provider, providerAccountId])
+}
+
+model Session {
+    id           String   @id @default(cuid())
+    sessionToken String   @unique
+    userId       String
+    expires      DateTime
+    user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+    identifier String
+    token      String   @unique
+    expires    DateTime
+
+    @@unique([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// Core domain: Organizations own Projects; membership at both levels controls
+// access. Org OWNERs implicitly get access to every project in the org;
+// everyone else needs an explicit ProjectMember row.
+// ---------------------------------------------------------------------------
+
+enum OrgRole {
+    OWNER
+    MEMBER
+}
+
+enum ProjectRole {
+    OWNER
+    REVIEWER
+}
+
+model Organization {
+    id        String   @id @default(cuid())
+    name      String
+    slug      String   @unique
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    members  OrganizationMember[]
+    projects Project[]
+}
+
+model OrganizationMember {
+    id             String   @id @default(cuid())
+    organizationId String
+    userId         String
+    role           OrgRole  @default(MEMBER)
+    createdAt      DateTime @default(now())
+
+    organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+    user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([organizationId, userId])
+    @@index([userId])
+}
+
+model Project {
+    id             String   @id @default(cuid())
+    organizationId String
+    name           String
+    description    String?
+    createdAt      DateTime @default(now())
+    updatedAt      DateTime @updatedAt
+
+    organization  Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+    members       ProjectMember[]
+    articles      Article[]
+    importBatches ImportBatch[]
+
+    @@index([organizationId])
+}
+
+model ProjectMember {
+    id        String      @id @default(cuid())
+    projectId String
+    userId    String
+    role      ProjectRole @default(REVIEWER)
+    createdAt DateTime    @default(now())
+
+    project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([projectId, userId])
+    @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Articles + review workflow. Decision lives directly on the article
+// (single shared team decision per article, not one row per reviewer) —
+// see README "Review workflow" for why.
+// ---------------------------------------------------------------------------
+
+enum ArticleStatus {
+    UNSCREENED
+    INCLUDED
+    EXCLUDED
+    MAYBE
+}
+
+model Article {
+    id        String @id @default(cuid())
+    projectId String
+
+    // PubMed-style import fields
+    pmid        String?
+    title       String
+    authors     String?
+    citation    String?
+    firstAuthor String?
+    journal     String?
+    pubYear     Int?
+    createDate  DateTime?
+    pmcid       String?
+    nihmsId     String?
+    doi         String?
+
+    // Review workflow
+    status        ArticleStatus @default(UNSCREENED)
+    reviewerNotes String?
+    labels        String[]      @default([])
+    reviewedById  String?
+    reviewedAt    DateTime?
+
+    importBatchId String?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    reviewedBy  User?        @relation("ArticleReviewer", fields: [reviewedById], references: [id])
+    importBatch ImportBatch? @relation(fields: [importBatchId], references: [id])
+
+    // Dedupe keys are enforced per-project. Postgres treats NULLs as distinct,
+    // so rows without a pmid/doi never collide with each other via these
+    // constraints — application-level dedupe (title+firstAuthor fallback)
+    // covers that case instead. See src/lib/import/dedupe.ts.
+    @@unique([projectId, pmid])
+    @@unique([projectId, doi])
+    @@index([projectId, status])
+    @@index([projectId, createdAt])
+}
+
+model ImportBatch {
+    id           String   @id @default(cuid())
+    projectId    String
+    importedById String
+    fileName     String
+    totalRows    Int
+    insertedRows Int
+    duplicateRows Int
+    invalidRows  Int
+    createdAt    DateTime @default(now())
+
+    project    Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    importedBy User             @relation(fields: [importedById], references: [id])
+    articles   Article[]
+    rowErrors  ImportRowError[]
+
+    @@index([projectId])
+}
+
+model ImportRowError {
+    id            String @id @default(cuid())
+    importBatchId String
+    rowNumber     Int
+    reason        String
+    rawData       Json
+
+    importBatch ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+
+    @@index([importBatchId])
+}
