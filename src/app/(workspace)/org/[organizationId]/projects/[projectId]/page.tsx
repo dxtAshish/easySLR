@@ -11,9 +11,11 @@ export default async function ProjectPage({
   const { organizationId, projectId } = await params;
 
   const project = await api.project.getById({ projectId });
-  void api.article.list.prefetch({ projectId, sortBy: "createdAt", sortDir: "desc", page: 1, pageSize: 25 });
-  void api.project.stats.prefetch({ projectId });
-  void api.article.labels.prefetch({ projectId });
+  await Promise.all([
+    api.article.list.prefetch({ projectId, sortBy: "createdAt", sortDir: "desc", page: 1, pageSize: 25 }),
+    api.project.stats.prefetch({ projectId }),
+    api.article.labels.prefetch({ projectId }),
+  ]);
 
   return (
     <HydrateClient>

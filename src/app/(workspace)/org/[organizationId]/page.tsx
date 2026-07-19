@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { MembersPanel } from "@/components/organizations/members-panel";
 import { ProjectList } from "@/components/projects/project-list";
+import { auth } from "@/server/auth";
 import { api, HydrateClient } from "@/trpc/server";
 
 export default async function OrganizationPage({
@@ -11,9 +12,12 @@ export default async function OrganizationPage({
 }) {
   const { organizationId } = await params;
 
+  const session = await auth();
   const organization = await api.organization.getById({ organizationId });
-  void api.project.list.prefetch({ organizationId });
-  void api.organization.members.list.prefetch({ organizationId });
+  await Promise.all([
+    api.project.list.prefetch({ organizationId }),
+    api.organization.members.list.prefetch({ organizationId }),
+  ]);
 
   return (
     <HydrateClient>
@@ -29,7 +33,11 @@ export default async function OrganizationPage({
           <ProjectList organizationId={organizationId} />
         </div>
         <div>
-          <MembersPanel organizationId={organizationId} isOwner={organization.myRole === "OWNER"} />
+          <MembersPanel
+            organizationId={organizationId}
+            isOwner={organization.myRole === "OWNER"}
+            currentUserId={session!.user.id}
+          />
         </div>
       </div>
     </HydrateClient>

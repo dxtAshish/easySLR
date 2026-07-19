@@ -1,7 +1,7 @@
 import { type Prisma } from "@prisma/client";
 import { z } from "zod";
 
-import { requireProjectAccess, requireProjectOwner } from "@/server/api/authz";
+import { requireProjectAccess } from "@/server/api/authz";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { buildCsv } from "@/lib/csv";
 
@@ -129,18 +129,6 @@ export const articleRouter = createTRPCRouter({
         data: { status: input.status, reviewedById: ctx.session.user.id, reviewedAt: new Date() },
       });
       return { updated: result.count };
-    }),
-
-  remove: protectedProcedure
-    .input(z.object({ articleId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      const article = await ctx.db.article.findUniqueOrThrow({
-        where: { id: input.articleId },
-        select: { projectId: true },
-      });
-      await requireProjectOwner(ctx.db, ctx.session.user.id, article.projectId);
-      await ctx.db.article.delete({ where: { id: input.articleId } });
-      return { success: true };
     }),
 
   exportCsv: protectedProcedure.input(listInput.omit({ page: true, pageSize: true })).mutation(

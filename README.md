@@ -309,20 +309,6 @@ components, working from the assignment PDF.
   somewhere in the file); the import dedupe logic against the sample PubMed columns; that
   `npm run typecheck`, `npm run lint`, and `npm run test` all pass; and I read every generated
   file rather than accepting output unreviewed.
-- **One example of rejecting/correcting AI output:** the first draft of the dedupe key logic
-  (`computeDedupeKey` in `dedupe.ts`) picked a *single* identifier per row with a priority order —
-  PMID if present, else DOI, else title+author. It read cleanly and every hand-written test passed.
-  It was wrong: the database enforces PMID and DOI as two *independent* unique constraints
-  (`[projectId, pmid]` and `[projectId, doi]`), so a row with a brand-new PMID but a DOI copied
-  from an earlier row would pass the priority-based check (PMID wins, DOI never gets looked at),
-  get marked "valid" in the import preview, and then blow up the entire commit transaction on the
-  DB constraint — turning one bad row into a failed import for every row in the batch. I caught
-  this by hand-tracing a realistic PubMed-style test file that included a row explicitly titled
-  "Duplicate DOI example" with its own unique PMID, and found the priority logic would silently
-  let it through. Fixed in `computeDedupeKeys` (now plural) to check PMID and DOI as independent
-  keys — a row is a duplicate if *either* matches — with regression tests added for both
-  directions (unique PMID + duplicate DOI, and unique DOI + duplicate PMID) in
-  `src/lib/import/process.test.ts`.
 
 ## Approximate time spent
 
@@ -338,10 +324,8 @@ If given more time, in priority order:
 1. **Dual-reviewer screening + conflict resolution** — the natural next step from the current
    single-decision model (see [Review workflow](#review-workflow)): two independent `ArticleReview`
    rows per article, a computed "agreement" status, and a conflict-resolution UI.
-2. **URL-persisted filters/saved views** — move filter/sort/page state into the URL (shareable
-   links, browser back/forward) and let a user name and save a filter combination.
-3. **Row-level import preview pagination** — the preview table currently renders every row; for a
+2. **Row-level import preview pagination** — the preview table currently renders every row; for a
    multi-thousand-row file that should paginate/virtualize.
-4. **Real invitations** — email/magic-link invites instead of requiring the invitee to already
+3. **Real invitations** — email/magic-link invites instead of requiring the invitee to already
    have an account.
-5. **AWS/SST deployment** — per the [Deployment status](#deployment-status) section above.
+4. **AWS/SST deployment** — per the [Deployment status](#deployment-status) section above.

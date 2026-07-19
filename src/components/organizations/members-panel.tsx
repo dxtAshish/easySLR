@@ -13,9 +13,11 @@ import { api } from "@/trpc/react";
 export function MembersPanel({
   organizationId,
   isOwner,
+  currentUserId,
 }: {
   organizationId: string;
   isOwner: boolean;
+  currentUserId: string;
 }) {
   const utils = api.useUtils();
   const { data, isLoading } = api.organization.members.list.useQuery({ organizationId });
@@ -55,7 +57,7 @@ export function MembersPanel({
               </div>
               <div className="flex items-center gap-2">
                 <Badge tone={m.role === "OWNER" ? "blue" : "neutral"}>{m.role}</Badge>
-                {isOwner && (
+                {isOwner && m.userId !== currentUserId && (
                   <Button
                     variant="ghost"
                     size="sm"

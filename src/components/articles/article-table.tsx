@@ -109,7 +109,7 @@ export function ArticleTable({
                 </div>
               </td>
               <td className="px-3 py-2 whitespace-nowrap text-slate-500">
-                {new Date(article.createdAt).toLocaleDateString()}
+                {new Date(article.createdAt).toLocaleDateString("en-US", { timeZone: "UTC" })}
               </td>
             </tr>
           ))}
